@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
       args:
         TARGETPLATFORM: ${TARGETPLATFORM:-linux/amd64}
+    command: ["sh", "-lc", "chmod +x /app/start-browser.sh && /app/start-browser.sh"]
     ports:
       - "7788:7788"
       - "6080:6080"
@@ -50,7 +51,7 @@ services:
 
       # Browser Settings
       - BROWSER_PATH=
-      - BROWSER_USER_DATA=
+      - BROWSER_USER_DATA=/app/data/chrome_data
       - BROWSER_DEBUGGING_PORT=${BROWSER_DEBUGGING_PORT:-9222}
       - BROWSER_DEBUGGING_HOST=0.0.0.0
       - USE_OWN_BROWSER=false
@@ -71,7 +72,7 @@ services:
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      # - ./my_chrome_data:/app/data/chrome_data # Optional: persist browser data
+      - ./my_chrome_data:/app/data/chrome_data # Persist browser data (shared with bridge)
     restart: unless-stopped
     shm_size: "2gb"
     cap_add:
@@ -106,10 +107,13 @@ services:
       - OLLAMA_HOST=${OLLAMA_HOST}
       - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
       - BROWSER_USE_LLM_URL=${BROWSER_USE_LLM_URL}
+      - BROWSER_USER_DATA=/app/data/chrome_data
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
     networks:
       - vendo_browser_agent
     restart: unless-stopped
+    volumes:
+      - ./my_chrome_data:/app/data/chrome_data # Share browser profile with WebUI
 
 networks:
   vendo_browser_agent:
