@@ -44,7 +44,10 @@ async def run_task(body: RunTaskBody):
 
     async def runner():
         try:
-            browser = Browser(cdp_url=os.getenv("BROWSER_CDP"))
+            browser = Browser(
+                cdp_url=os.getenv("BROWSER_CDP"),
+                user_data_dir=os.getenv("BROWSER_USER_DATA") or None,
+            )
             llm = _get_llm()
             agent = Agent(
                 task=body.task,

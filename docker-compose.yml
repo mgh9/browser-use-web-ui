@@ -50,7 +50,7 @@ services:
 
       # Browser Settings
       - BROWSER_PATH=
-      - BROWSER_USER_DATA=/app/data/chrome_data
+      - BROWSER_USER_DATA=${BROWSER_USER_DATA}
       - BROWSER_DEBUGGING_PORT=${BROWSER_DEBUGGING_PORT:-9222}
       - BROWSER_DEBUGGING_HOST=0.0.0.0
       - USE_OWN_BROWSER=false
