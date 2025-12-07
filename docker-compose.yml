@@ -57,7 +57,7 @@ services:
     tmpfs:
       - /tmp
     networks:
-      - vendoroo   
+      - vendo_browser_agent  
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "5901"] # VNC port
       interval: 10s
@@ -74,9 +74,9 @@ services:
       - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
     networks:
-      - vendoroo
+      - vendo_browser_agent
     restart: unless-stopped
 
 networks:
-  vendoroo:
+  vendo_browser_agent:
     external: true
