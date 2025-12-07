@@ -107,6 +107,7 @@ services:
       - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
       - BROWSER_USE_LLM_URL=${BROWSER_USE_LLM_URL}
       - BROWSER_USER_DATA=/app/data/chrome_data
+      - BROWSER_CDP=http://browser-use-webui:9222
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
     networks:
       - vendo_browser_agent
