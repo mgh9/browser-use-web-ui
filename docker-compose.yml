@@ -11,7 +11,7 @@ services:
       - "7788:7788"
       - "6080:6080"
       - "5901:5901"
-      - "9333:9222" # for cdp browser forwarding
+      - "9222:9222" # expose CDP for local bridge
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       #- OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://localhost:11434}
@@ -30,7 +30,7 @@ services:
       - BROWSER_PATH=
       - BROWSER_USER_DATA=
       - BROWSER_DEBUGGING_PORT=${BROWSER_DEBUGGING_PORT:-9222}
-      - BROWSER_DEBUGGING_HOST=localhost
+      - BROWSER_DEBUGGING_HOST=0.0.0.0
       - USE_OWN_BROWSER=false
       - KEEP_BROWSER_OPEN=true
       - BROWSER_CDP=${BROWSER_CDP:-} # e.g., http://localhost:9222
@@ -63,6 +63,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  browser-use-bridge:
+    build: ./bridge
+    depends_on:
+      - browser-use-webui
+    ports:
+      - "9000:9000"
+    environment:
+      - BROWSER_CDP=http://browser-use-webui:9222
+      - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
+      # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
+    networks:
+      - vendoroo
+    restart: unless-stopped
 
 networks:
   vendoroo:
