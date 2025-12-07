@@ -69,9 +69,8 @@ services:
     depends_on:
       - browser-use-webui
     ports:
-      - "9000:9000"
+      - "9001:9000" # host:container (change host port to avoid conflicts)
     environment:
-      - BROWSER_CDP=http://browser-use-webui:9222
       - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
     networks:
