@@ -72,27 +72,31 @@ def get_task(task_id: str):
 
 
 def _get_llm():
-    """
-    Select LLM based on env vars.
+	"""
+	Select LLM based on env vars.
 
-    Supported:
-    - LLM_PROVIDER=openrouter with OPENROUTER_API_KEY/OPENAI_API_KEY and LLM_MODEL
-    - LLM_PROVIDER=ollama with OLLAMA_ENDPOINT/OLLAMA_HOST and LLM_MODEL
-    - default: ChatBrowserUse (requires BROWSER_USE_API_KEY)
-    """
-    provider = os.getenv("LLM_PROVIDER", "browser-use").lower()
+	Priority:
+	1) LLM_PROVIDER / LLM_MODEL
+	2) DEFAULT_LLM / DEFAULT_MODEL_NAME (keeps parity with WebUI vars)
+	Supported providers:
+	- openrouter: OPENROUTER_API_KEY or OPENAI_API_KEY, OPENROUTER_BASE_URL or OPENAI_ENDPOINT
+	- ollama: OLLAMA_ENDPOINT or OLLAMA_HOST
+	- browser-use (default): needs BROWSER_USE_API_KEY
+	"""
+	provider = os.getenv("LLM_PROVIDER") or os.getenv("DEFAULT_LLM") or "browser-use"
+	provider = provider.lower()
+	model = os.getenv("LLM_MODEL") or os.getenv("DEFAULT_MODEL_NAME") or "bu-latest"
 
-    if provider == "openrouter":
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-        model = os.getenv("LLM_MODEL", "google/gemini-2.5-flash")
-        base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        return ChatOpenRouter(model=model, api_key=api_key, base_url=base_url)
+	if provider == "openrouter":
+		api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+		base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_ENDPOINT") or "https://openrouter.ai/api/v1"
+		return ChatOpenRouter(model=model, api_key=api_key, base_url=base_url)
 
-    if provider == "ollama":
-        host = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_HOST")
-        model = os.getenv("LLM_MODEL", "llama3.2")
-        return ChatOllama(model=model, host=host)
+	if provider == "ollama":
+		host = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_HOST")
+		if not model:
+			model = "llama3.2"
+		return ChatOllama(model=model, host=host)
 
-    # default: Browser-Use cloud LLM (requires BROWSER_USE_API_KEY)
-    model = os.getenv("LLM_MODEL", "bu-latest")
-    return ChatBrowserUse(model=model, api_key=os.getenv("BROWSER_USE_API_KEY"), base_url=os.getenv("BROWSER_USE_LLM_URL"))
+	# default: Browser-Use cloud LLM (requires BROWSER_USE_API_KEY)
+	return ChatBrowserUse(model=model, api_key=os.getenv("BROWSER_USE_API_KEY"), base_url=os.getenv("BROWSER_USE_LLM_URL"))
