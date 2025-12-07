@@ -56,8 +56,8 @@ async def run_task(body: RunTaskBody):
             history = await agent.run()
             TASKS[task_id]["status"] = "finished"
             TASKS[task_id]["isSuccess"] = True
-            TASKS[task_id]["steps"] = history
-            TASKS[task_id]["output"] = history[-1]["content"] if history else ""
+            TASKS[task_id]["steps"] = _serialize_history(history)
+            TASKS[task_id]["output"] = _extract_output(history)
         except Exception as exc:
             TASKS[task_id]["status"] = "stopped"
             TASKS[task_id]["isSuccess"] = False
@@ -123,3 +123,50 @@ def _get_llm():
 		bool(bu_key),
 	)
 	return ChatBrowserUse(model=model, api_key=bu_key, base_url=bu_base)
+
+
+def _serialize_history(history):
+    """Convert AgentHistoryList or list-like to JSON-serializable structure."""
+    if hasattr(history, "model_dump"):
+        try:
+            return history.model_dump()
+        except Exception:
+            pass
+    try:
+        return list(history)
+    except Exception:
+        return str(history)
+
+
+def _extract_output(history) -> str:
+    """
+    Best-effort extraction of final output from AgentHistoryList.
+    Returns empty string if not found.
+    """
+    try:
+        hist_list = history.history if hasattr(history, "history") else history
+        if not hist_list:
+            return ""
+        last_item = hist_list[-1]
+        # pydantic model: access attributes
+        if hasattr(last_item, "result"):
+            res = last_item.result
+            if res:
+                last_res = res[-1]
+                if hasattr(last_res, "extracted_content"):
+                    return last_res.extracted_content or ""
+                if hasattr(last_res, "model_dump"):
+                    dumped = last_res.model_dump()
+                    if isinstance(dumped, dict):
+                        return dumped.get("extracted_content", "") or dumped.get("output", "") or ""
+                    return str(dumped)
+        # dict-like
+        if isinstance(last_item, dict):
+            results = last_item.get("result") or last_item.get("results")
+            if results:
+                last_res = results[-1]
+                if isinstance(last_res, dict):
+                    return last_res.get("extracted_content", "") or last_res.get("output", "") or ""
+        return ""
+    except Exception:
+        return ""
