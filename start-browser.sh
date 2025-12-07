@@ -11,6 +11,12 @@ start_browser() {
     CMD="google-chrome"
   elif command -v google-chrome-stable >/dev/null 2>&1; then
     CMD="google-chrome-stable"
+  else
+    # Try Playwright-installed Chromium (PLAYWRIGHT_BROWSERS_PATH default: /ms-browsers)
+    PW_CHROME="$(find /ms-browsers -type f -name chrome -path '*chromium*' 2>/dev/null | head -n 1)"
+    if [ -n "$PW_CHROME" ] && [ -x "$PW_CHROME" ]; then
+      CMD="$PW_CHROME"
+    fi
   fi
 
   if [ -n "$CMD" ]; then
