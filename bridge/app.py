@@ -9,8 +9,11 @@ from pydantic import BaseModel
 from browser_use import Agent, Browser, ChatBrowserUse
 from browser_use.llm.openrouter.chat import ChatOpenRouter
 from browser_use.llm.ollama.chat import ChatOllama
+import logging
 
 app = FastAPI(title="Browser-Use Local Bridge")
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 class RunTaskBody(BaseModel):
     task: str
@@ -90,13 +93,33 @@ def _get_llm():
 	if provider == "openrouter":
 		api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 		base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_ENDPOINT") or "https://openrouter.ai/api/v1"
+		logger.info(
+			"LLM selection: provider=openrouter model=%s base_url=%s api_key_set=%s",
+			model,
+			base_url,
+			bool(api_key),
+		)
 		return ChatOpenRouter(model=model, api_key=api_key, base_url=base_url)
 
 	if provider == "ollama":
 		host = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_HOST")
 		if not model:
 			model = "llama3.2"
+		logger.info(
+			"LLM selection: provider=ollama model=%s host=%s host_set=%s",
+			model,
+			host,
+			bool(host),
+		)
 		return ChatOllama(model=model, host=host)
 
 	# default: Browser-Use cloud LLM (requires BROWSER_USE_API_KEY)
-	return ChatBrowserUse(model=model, api_key=os.getenv("BROWSER_USE_API_KEY"), base_url=os.getenv("BROWSER_USE_LLM_URL"))
+	bu_key = os.getenv("BROWSER_USE_API_KEY")
+	bu_base = os.getenv("BROWSER_USE_LLM_URL")
+	logger.info(
+		"LLM selection: provider=browser-use model=%s base_url=%s api_key_set=%s",
+		model,
+		bu_base,
+		bool(bu_key),
+	)
+	return ChatBrowserUse(model=model, api_key=bu_key, base_url=bu_base)
