@@ -86,6 +86,31 @@ services:
       timeout: 5s
       retries: 3
 
+  headful-chrome:
+    image: kasmweb/chrome:1.15.0
+    shm_size: "2g"
+    environment:
+      - VNC_PW=${VNC_PASSWORD:-youvncpassword}
+    command: >
+      bash -lc "
+        google-chrome
+          --no-sandbox
+          --disable-dev-shm-usage
+          --start-maximized
+          --user-data-dir=/data
+          --remote-debugging-address=0.0.0.0
+          --remote-debugging-port=9222
+          about:blank
+      "
+    ports:
+      - "6901:6901"  # noVNC/VNC
+      - "9223:9222"  # CDP (optional host access)
+    volumes:
+      - ./my_chrome_data:/data
+    networks:
+      - vendo_browser_agent
+    restart: unless-stopped
+
   browser-use-bridge:
     build: ./bridge
     depends_on:
@@ -107,7 +132,7 @@ services:
       - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
       - BROWSER_USE_LLM_URL=${BROWSER_USE_LLM_URL}
       - BROWSER_USER_DATA=/app/data/chrome_data
-      - BROWSER_CDP=http://browser-use-webui:9222
+      - BROWSER_CDP=${BROWSER_CDP}
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
     networks:
       - vendo_browser_agent
