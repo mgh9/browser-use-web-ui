@@ -10,8 +10,37 @@ services:
     ports:
       - "7788:7788"
       - "6080:6080"
-      - "9222:9222" # expose CDP for local bridge
+      #- "9222:9222" # expose CDP for local bridge
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
+      # Application Settings
+      - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}
+      - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
+
+      # Browser Settings
+      - BROWSER_PATH=
+      - BROWSER_USER_DATA=${BROWSER_USER_DATA}
+      - BROWSER_DEBUGGING_PORT=${BROWSER_DEBUGGING_PORT:-9222}
+      - BROWSER_DEBUGGING_HOST=0.0.0.0
+      - USE_OWN_BROWSER=false
+      - KEEP_BROWSER_OPEN=true
+      - BROWSER_CDP=${BROWSER_CDP:-} # e.g., http://localhost:9222
+
+      # Display Settings
+      - DISPLAY=:99
+
+      # This ENV is used by the Dockerfile during build time if playwright respects it.
+      # It's not strictly needed at runtime by docker-compose unless your app or scripts also read it.
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-browsers # Matches Dockerfile ENV
+
+      - RESOLUTION=${RESOLUTION:-1920x1080x24}
+      - RESOLUTION_WIDTH=${RESOLUTION_WIDTH:-1920}
+      - RESOLUTION_HEIGHT=${RESOLUTION_HEIGHT:-1080}
+
+      # VNC Settings
+      - VNC_PASSWORD=${VNC_PASSWORD:-youvncpassword}
+
       # LLM API Keys & Endpoints
       - OPENAI_ENDPOINT=${OPENAI_ENDPOINT:-https://api.openai.com/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -43,32 +72,6 @@ services:
       - IBM_API_KEY=${IBM_API_KEY:-}
       - IBM_PROJECT_ID=${IBM_PROJECT_ID:-}
 
-
-      # Application Settings
-      - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}
-      - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
-
-      # Browser Settings
-      - BROWSER_PATH=
-      - BROWSER_USER_DATA=${BROWSER_USER_DATA}
-      - BROWSER_DEBUGGING_PORT=${BROWSER_DEBUGGING_PORT:-9222}
-      - BROWSER_DEBUGGING_HOST=0.0.0.0
-      - USE_OWN_BROWSER=false
-      - KEEP_BROWSER_OPEN=true
-      - BROWSER_CDP=${BROWSER_CDP:-} # e.g., http://localhost:9222
-
-      # Display Settings
-      - DISPLAY=:99
-      # This ENV is used by the Dockerfile during build time if playwright respects it.
-      # It's not strictly needed at runtime by docker-compose unless your app or scripts also read it.
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-browsers # Matches Dockerfile ENV
-      - RESOLUTION=${RESOLUTION:-1920x1080x24}
-      - RESOLUTION_WIDTH=${RESOLUTION_WIDTH:-1920}
-      - RESOLUTION_HEIGHT=${RESOLUTION_HEIGHT:-1080}
-
-      # VNC Settings
-      - VNC_PASSWORD=${VNC_PASSWORD:-youvncpassword}
-
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./my_chrome_data:/app/data/chrome_data # Persist browser data (shared with bridge)
@@ -92,23 +95,29 @@ services:
       - browser-use-webui
     ports:
       - "9001:9000" # host:container (change host port to avoid conflicts)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
-      - LLM_PROVIDER=${LLM_PROVIDER}
-      - LLM_MODEL=${LLM_MODEL}
-      - DEFAULT_LLM=${DEFAULT_LLM}
-      - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_ENDPOINT=${OPENAI_ENDPOINT}
-      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT}
-      - OLLAMA_HOST=${OLLAMA_HOST}
       - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
       - BROWSER_USE_LLM_URL=${BROWSER_USE_LLM_URL}
       - BROWSER_USER_DATA=/app/data/chrome_data
       - BROWSER_CDP=${BROWSER_CDP}
+      - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
+
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - LLM_MODEL=${LLM_MODEL}
+      - DEFAULT_LLM=${DEFAULT_LLM}
+      - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME}
+
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL}
+
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_ENDPOINT=${OPENAI_ENDPOINT}
+
+      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT}
+      - OLLAMA_HOST=${OLLAMA_HOST}
     networks:
       - vendo_browser_agent
     restart: unless-stopped
