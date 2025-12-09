@@ -98,9 +98,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
-      - BROWSER_USE_LLM_URL=${BROWSER_USE_LLM_URL}
-      - BROWSER_USER_DATA=/app/data/chrome_data
+      - BROWSER_USER_DATA=${BROWSER_USER_DATA:-/app/data/chrome_data}
       - BROWSER_CDP=${BROWSER_CDP}
       - BROWSER_USE_LOGGING_LEVEL=${BROWSER_USE_LOGGING_LEVEL:-info}
 
@@ -108,6 +106,8 @@ services:
       - LLM_MODEL=${LLM_MODEL}
       - DEFAULT_LLM=${DEFAULT_LLM}
       - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME}
+      - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
+      - BROWSER_USE_LLM_URL=${BROWSER_USE_LLM_URL}
 
       # Add LLM keys as needed, e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
