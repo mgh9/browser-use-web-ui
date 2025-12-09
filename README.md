@@ -1,6 +1,6 @@
 BrowserUse with simple API to use on your server as self-hosted:
 run-task, status, cancel
-
+________________________________
 
 
 <img src="./assets/web-ui.png" alt="Browser Use Web UI" width="full"/>
