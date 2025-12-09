@@ -20,6 +20,8 @@ class RunTaskBody(BaseModel):
     task: str
     startUrl: Optional[str] = None
     maxSteps: Optional[int] = 30
+    cdpUrl: Optional[str] = None
+    userDataDir: Optional[str] = None
 
 
 # simple in-memory task store; replace with Redis/DB if needed
@@ -47,8 +49,8 @@ async def run_task(body: RunTaskBody):
     async def runner():
         try:
             browser = Browser(
-                cdp_url=os.getenv("BROWSER_CDP"),
-                user_data_dir=os.getenv("BROWSER_USER_DATA") or None,
+                cdp_url=body.cdpUrl or os.getenv("BROWSER_CDP"),
+                user_data_dir=body.userDataDir or os.getenv("BROWSER_USER_DATA") or None,
             )
             llm = _get_llm()
             agent = Agent(
