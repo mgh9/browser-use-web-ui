@@ -10,6 +10,7 @@ from browser_use import Agent, Browser, ChatBrowserUse
 from browser_use.llm.openrouter.chat import ChatOpenRouter
 from browser_use.llm.ollama.chat import ChatOllama
 import logging
+import asyncio
 
 app = FastAPI(title="Browser-Use Local Bridge")
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def run_task(body: RunTaskBody):
         "error": None,
         "sessionId": None,
     }
+    handle: asyncio.Task | None = None
 
     async def runner():
         try:
@@ -61,12 +63,18 @@ async def run_task(body: RunTaskBody):
             TASKS[task_id]["isSuccess"] = True
             TASKS[task_id]["steps"] = _serialize_history(history)
             TASKS[task_id]["output"] = _extract_output(history)
+        except asyncio.CancelledError:
+            TASKS[task_id]["status"] = "canceled"
+            TASKS[task_id]["isSuccess"] = False
+            TASKS[task_id]["error"] = "canceled"
+            raise
         except Exception as exc:
             TASKS[task_id]["status"] = "stopped"
             TASKS[task_id]["isSuccess"] = False
             TASKS[task_id]["error"] = str(exc)
 
-    asyncio.create_task(runner())
+    handle = asyncio.create_task(runner())
+    TASKS[task_id]["_handle"] = handle
     return {"id": task_id}
 
 
@@ -74,7 +82,20 @@ async def run_task(body: RunTaskBody):
 def get_task(task_id: str):
     if task_id not in TASKS:
         return {"status": "not_found", "id": task_id}
-    return {"id": task_id, **TASKS[task_id]}
+    return {"id": task_id, **_public_task_view(TASKS[task_id])}
+
+
+@app.post("/cancel/{task_id}")
+async def cancel_task(task_id: str):
+    task = TASKS.get(task_id)
+    if not task:
+        return {"id": task_id, "status": "not_found"}
+    handle: asyncio.Task | None = task.get("_handle")
+    if handle and not handle.done():
+        handle.cancel()
+        task["status"] = "canceled"
+        return {"id": task_id, "status": "canceled"}
+    return {"id": task_id, "status": task.get("status", "unknown")}
 
 
 def _get_llm():
@@ -173,3 +194,8 @@ def _extract_output(history) -> str:
         return ""
     except Exception:
         return ""
+
+
+def _public_task_view(task: dict) -> dict:
+    """Strip internal fields (e.g., _handle) from task dict."""
+    return {k: v for k, v in task.items() if not k.startswith("_")}
