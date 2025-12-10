@@ -238,7 +238,8 @@ def _mark_done(task_id: str, status: str, is_success: bool, steps, output, error
     duration = None
     try:
         if started_at:
-            start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            # Normalize to naive UTC to avoid aware/naive subtraction issues
+            start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00")).replace(tzinfo=None)
             duration = (finished_at - start_dt).total_seconds()
     except Exception:
         duration = None
