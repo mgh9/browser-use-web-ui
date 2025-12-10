@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import os
 import uuid
 from typing import Optional
@@ -10,7 +11,7 @@ from browser_use import Agent, Browser, ChatBrowserUse
 from browser_use.llm.openrouter.chat import ChatOpenRouter
 from browser_use.llm.ollama.chat import ChatOllama
 import logging
-import asyncio
+import httpx
 
 app = FastAPI(title="Browser-Use Local Bridge")
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class RunTaskBody(BaseModel):
     maxSteps: Optional[int] = 30
     cdpUrl: Optional[str] = None
     userDataDir: Optional[str] = None
+    callbackUrl: Optional[str] = None
 
 
 # simple in-memory task store; replace with Redis/DB if needed
@@ -36,6 +38,8 @@ def ping():
 @app.post("/run-task")
 async def run_task(body: RunTaskBody):
     task_id = str(uuid.uuid4())
+    started_at = datetime.utcnow()
+    cdp_url = body.cdpUrl or os.getenv("BROWSER_CDP")
     TASKS[task_id] = {
         "status": "running",
         "output": None,
@@ -43,13 +47,21 @@ async def run_task(body: RunTaskBody):
         "steps": [],
         "error": None,
         "sessionId": None,
+        "startedAt": started_at.isoformat() + "Z",
+        "finishedAt": None,
+        "durationSec": None,
+        "cdpUrl": cdp_url,
+        "callbackUrl": body.callbackUrl,
+        "task": body.task,
+        "startUrl": body.startUrl,
+        "maxSteps": body.maxSteps,
     }
     handle: asyncio.Task | None = None
 
     async def runner():
         try:
             browser = Browser(
-                cdp_url=body.cdpUrl or os.getenv("BROWSER_CDP"),
+                cdp_url=cdp_url,
                 user_data_dir=body.userDataDir or os.getenv("BROWSER_USER_DATA") or None,
             )
             llm = _get_llm()
@@ -61,19 +73,33 @@ async def run_task(body: RunTaskBody):
                 max_steps=body.maxSteps,
             )
             history = await agent.run()
-            TASKS[task_id]["status"] = "finished"
-            TASKS[task_id]["isSuccess"] = True
-            TASKS[task_id]["steps"] = _serialize_history(history)
-            TASKS[task_id]["output"] = _extract_output(history)
+            _mark_done(
+                task_id,
+                status="finished",
+                is_success=True,
+                steps=_serialize_history(history),
+                output=_extract_output(history),
+                error=None,
+            )
         except asyncio.CancelledError:
-            TASKS[task_id]["status"] = "canceled"
-            TASKS[task_id]["isSuccess"] = False
-            TASKS[task_id]["error"] = "canceled"
+            _mark_done(
+                task_id,
+                status="canceled",
+                is_success=False,
+                steps=[],
+                output=None,
+                error="canceled",
+            )
             raise
         except Exception as exc:
-            TASKS[task_id]["status"] = "stopped"
-            TASKS[task_id]["isSuccess"] = False
-            TASKS[task_id]["error"] = str(exc)
+            _mark_done(
+                task_id,
+                status="stopped",
+                is_success=False,
+                steps=[],
+                output=None,
+                error=str(exc),
+            )
 
     handle = asyncio.create_task(runner())
     TASKS[task_id]["_handle"] = handle
@@ -201,3 +227,39 @@ def _extract_output(history) -> str:
 def _public_task_view(task: dict) -> dict:
     """Strip internal fields (e.g., _handle) from task dict."""
     return {k: v for k, v in task.items() if not k.startswith("_")}
+
+
+def _mark_done(task_id: str, status: str, is_success: bool, steps, output, error):
+    finished_at = datetime.utcnow()
+    task = TASKS.get(task_id)
+    if not task:
+        return
+    started_at = task.get("startedAt")
+    duration = None
+    try:
+        if started_at:
+            start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            duration = (finished_at - start_dt).total_seconds()
+    except Exception:
+        duration = None
+
+    task["status"] = status
+    task["isSuccess"] = is_success
+    task["steps"] = steps
+    task["output"] = output
+    task["error"] = error
+    task["finishedAt"] = finished_at.isoformat() + "Z"
+    task["durationSec"] = duration
+
+    callback_url = task.get("callbackUrl")
+    if callback_url:
+        asyncio.create_task(_send_callback(callback_url, task_id))
+
+
+async def _send_callback(callback_url: str, task_id: str):
+    payload = {"id": task_id, **_public_task_view(TASKS.get(task_id, {}))}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(callback_url, json=payload)
+    except Exception as exc:
+        logger.warning("Callback failed for %s: %s", task_id, exc)
