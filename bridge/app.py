@@ -23,6 +23,7 @@ class RunTaskBody(BaseModel):
     maxSteps: Optional[int] = 30
     cdpUrl: Optional[str] = None
     userDataDir: Optional[str] = None
+    clientTaskId: Optional[str] = None
     taskStartedCallbackUrl: Optional[str] = None
     taskCompletedCallbackUrl: Optional[str] = None
 
@@ -54,6 +55,7 @@ async def run_task(body: RunTaskBody):
         "cdpUrl": cdp_url,
         "taskStartedCallbackUrl": body.taskStartedCallbackUrl,
         "taskCompletedCallbackUrl": body.taskCompletedCallbackUrl,
+        "clientTaskId": body.clientTaskId,
         "task": body.task,
         "startUrl": body.startUrl,
         "maxSteps": body.maxSteps,
@@ -108,7 +110,7 @@ async def run_task(body: RunTaskBody):
 
     handle = asyncio.create_task(runner())
     TASKS[task_id]["_handle"] = handle
-    return {"id": task_id}
+    return {"id": task_id, "clientTaskId": body.clientTaskId}
 
 
 @app.get("/task/{task_id}")
@@ -127,8 +129,8 @@ async def cancel_task(task_id: str):
     if handle and not handle.done():
         handle.cancel()
         task["status"] = "canceled"
-        return {"id": task_id, "status": "canceled"}
-    return {"id": task_id, "status": task.get("status", "unknown")}
+        return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": "canceled"}
+    return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": task.get("status", "unknown")}
 
 
 def _get_llm():
