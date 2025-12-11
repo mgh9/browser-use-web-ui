@@ -42,8 +42,15 @@ async def run_task(body: RunTaskBody):
     task_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
     cdp_url = body.cdpUrl or os.getenv("BROWSER_CDP")
-    logger.info("run-task received: task_id=%s clientTaskId=%s cdpUrl=%s startUrl=%s maxSteps=%s",
-                task_id, body.clientTaskId, cdp_url, body.startUrl, body.maxSteps)
+    logger.info(
+        "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s maxSteps=%s",
+        task_id,
+        body.clientTaskId,
+        cdp_url,
+        body.userDataDir or os.getenv("BROWSER_USER_DATA"),
+        body.startUrl,
+        body.maxSteps,
+    )
     TASKS[task_id] = {
         "status": "running",
         "output": None,
@@ -65,7 +72,12 @@ async def run_task(body: RunTaskBody):
     handle: asyncio.Task | None = None
     # fire start callback (non-blocking)
     if body.taskStartedCallbackUrl:
-        logger.info("task_started_callback scheduled: task_id=%s url=%s", task_id, body.taskStartedCallbackUrl)
+        logger.info(
+            "[START_CB] task_id=%s clientTaskId=%s url=%s",
+            task_id,
+            body.clientTaskId,
+            body.taskStartedCallbackUrl,
+        )
         asyncio.create_task(_send_callback(body.taskStartedCallbackUrl, task_id))
 
     async def runner():
@@ -113,7 +125,12 @@ async def run_task(body: RunTaskBody):
 
     handle = asyncio.create_task(runner())
     TASKS[task_id]["_handle"] = handle
-    logger.info("task scheduled: task_id=%s clientTaskId=%s", task_id, body.clientTaskId)
+    logger.info(
+        "[SCHEDULED] task_id=%s clientTaskId=%s cdpUrl=%s",
+        task_id,
+        body.clientTaskId,
+        cdp_url,
+    )
     return {"id": task_id, "clientTaskId": body.clientTaskId}
 
 
@@ -133,7 +150,11 @@ async def cancel_task(task_id: str):
     if handle and not handle.done():
         handle.cancel()
         task["status"] = "canceled"
-        logger.info("task canceled: task_id=%s clientTaskId=%s", task_id, task.get("clientTaskId"))
+        logger.info(
+            "[CANCEL] task_id=%s clientTaskId=%s",
+            task_id,
+            task.get("clientTaskId"),
+        )
         return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": "canceled"}
     return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": task.get("status", "unknown")}
 
@@ -266,8 +287,13 @@ def _mark_done(task_id: str, status: str, is_success: bool, steps, output, error
 
     callback_url = task.get("taskCompletedCallbackUrl")
     if callback_url:
-        logger.info("task_completed_callback scheduled: task_id=%s clientTaskId=%s url=%s",
-                    task_id, task.get("clientTaskId"), callback_url)
+        logger.info(
+            "[COMPLETE_CB] task_id=%s clientTaskId=%s url=%s cdpUrl=%s",
+            task_id,
+            task.get("clientTaskId"),
+            callback_url,
+            task.get("cdpUrl"),
+        )
         asyncio.create_task(_send_callback(callback_url, task_id))
 
 
@@ -279,4 +305,4 @@ async def _send_callback(callback_url: str, task_id: str):
     except Exception as exc:
         logger.warning("Callback failed for %s: %s", task_id, exc)
     else:
-        logger.info("Callback delivered: task_id=%s url=%s", task_id, callback_url)
+        logger.info("[CALLBACK_OK] task_id=%s url=%s", task_id, callback_url)
