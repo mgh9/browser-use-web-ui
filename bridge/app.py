@@ -23,7 +23,8 @@ class RunTaskBody(BaseModel):
     maxSteps: Optional[int] = 30
     cdpUrl: Optional[str] = None
     userDataDir: Optional[str] = None
-    callbackUrl: Optional[str] = None
+    taskStartedCallbackUrl: Optional[str] = None
+    taskCompletedCallbackUrl: Optional[str] = None
 
 
 # simple in-memory task store; replace with Redis/DB if needed
@@ -51,12 +52,16 @@ async def run_task(body: RunTaskBody):
         "finishedAt": None,
         "durationSec": None,
         "cdpUrl": cdp_url,
-        "callbackUrl": body.callbackUrl,
+        "taskStartedCallbackUrl": body.taskStartedCallbackUrl,
+        "taskCompletedCallbackUrl": body.taskCompletedCallbackUrl,
         "task": body.task,
         "startUrl": body.startUrl,
         "maxSteps": body.maxSteps,
     }
     handle: asyncio.Task | None = None
+    # fire start callback (non-blocking)
+    if body.taskStartedCallbackUrl:
+        asyncio.create_task(_send_callback(body.taskStartedCallbackUrl, task_id))
 
     async def runner():
         try:
@@ -252,7 +257,7 @@ def _mark_done(task_id: str, status: str, is_success: bool, steps, output, error
     task["finishedAt"] = finished_at.isoformat() + "Z"
     task["durationSec"] = duration
 
-    callback_url = task.get("callbackUrl")
+    callback_url = task.get("taskCompletedCallbackUrl")
     if callback_url:
         asyncio.create_task(_send_callback(callback_url, task_id))
 
