@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 DEFAULT_MAX_STEPS_FALLBACK = 30
+DEFAULT_MAX_STEPS_ENV = "DEFAULT_MAX_STEPS"
+MAX_STEPS_LIMIT_ENV = "MAX_STEPS_LIMIT"
 
 
 class RunTaskBody(BaseModel):
@@ -45,7 +47,9 @@ async def run_task(body: RunTaskBody):
     task_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
     cdp_url = body.cdpUrl or os.getenv("BROWSER_CDP")
-    max_steps, max_steps_meta = _resolve_max_steps(body.maxSteps)
+    default_max_steps = _read_positive_int_env(DEFAULT_MAX_STEPS_ENV, DEFAULT_MAX_STEPS_FALLBACK)
+    max_steps_limit = _read_positive_int_env(MAX_STEPS_LIMIT_ENV, default_max_steps)
+    max_steps = _effective_max_steps(body.maxSteps, default_max_steps, max_steps_limit)
     logger.info(
         "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s "
         "requestedMaxSteps=%s effectiveMaxSteps=%s defaultMaxSteps=%s maxStepsLimit=%s",
@@ -54,10 +58,10 @@ async def run_task(body: RunTaskBody):
         cdp_url,
         body.userDataDir or os.getenv("BROWSER_USER_DATA"),
         body.startUrl,
-        max_steps_meta["requested"],
+        body.maxSteps,
         max_steps,
-        max_steps_meta["default"],
-        max_steps_meta["limit"],
+        default_max_steps,
+        max_steps_limit,
     )
     TASKS[task_id] = {
         "status": "running",
@@ -167,17 +171,12 @@ async def cancel_task(task_id: str):
     return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": task.get("status", "unknown")}
 
 
-def _resolve_max_steps(requested: Optional[int]) -> tuple[int, dict]:
-    default_max = _read_positive_int_env("DEFAULT_MAX_STEPS", DEFAULT_MAX_STEPS_FALLBACK)
-    limit = _read_positive_int_env("MAX_STEPS_LIMIT", default_max)
-    requested_positive = requested if isinstance(requested, int) and requested > 0 else None
-    effective = requested_positive or default_max
+def _effective_max_steps(requested: Optional[int], default_max: int, limit: int) -> int:
+    effective = default_max
+    if isinstance(requested, int) and requested > 0:
+        effective = requested
     effective = min(effective, limit)
-    return effective, {
-        "requested": requested,
-        "default": default_max,
-        "limit": limit,
-    }
+    return effective
 
 
 def _read_positive_int_env(var_name: str, fallback: int) -> int:
