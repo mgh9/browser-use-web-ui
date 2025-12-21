@@ -17,10 +17,13 @@ app = FastAPI(title="Browser-Use Local Bridge")
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
+DEFAULT_MAX_STEPS_FALLBACK = 30
+
+
 class RunTaskBody(BaseModel):
     task: str
     startUrl: Optional[str] = None
-    maxSteps: Optional[int] = 30
+    maxSteps: Optional[int] = None
     cdpUrl: Optional[str] = None
     userDataDir: Optional[str] = None
     clientTaskId: Optional[str] = None
@@ -42,14 +45,19 @@ async def run_task(body: RunTaskBody):
     task_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
     cdp_url = body.cdpUrl or os.getenv("BROWSER_CDP")
+    max_steps, max_steps_meta = _resolve_max_steps(body.maxSteps)
     logger.info(
-        "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s maxSteps=%s",
+        "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s "
+        "requestedMaxSteps=%s effectiveMaxSteps=%s defaultMaxSteps=%s maxStepsLimit=%s",
         task_id,
         body.clientTaskId,
         cdp_url,
         body.userDataDir or os.getenv("BROWSER_USER_DATA"),
         body.startUrl,
-        body.maxSteps,
+        max_steps_meta["requested"],
+        max_steps,
+        max_steps_meta["default"],
+        max_steps_meta["limit"],
     )
     TASKS[task_id] = {
         "status": "running",
@@ -67,7 +75,7 @@ async def run_task(body: RunTaskBody):
         "clientTaskId": body.clientTaskId,
         "task": body.task,
         "startUrl": body.startUrl,
-        "maxSteps": body.maxSteps,
+        "maxSteps": max_steps,
     }
     handle: asyncio.Task | None = None
     # fire start callback (non-blocking)
@@ -92,7 +100,7 @@ async def run_task(body: RunTaskBody):
                 browser=browser,
                 llm=llm,
                 start_url=body.startUrl,
-                max_steps=body.maxSteps,
+                max_steps=max_steps,
             )
             history = await agent.run()
             _mark_done(
@@ -157,6 +165,33 @@ async def cancel_task(task_id: str):
         )
         return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": "canceled"}
     return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": task.get("status", "unknown")}
+
+
+def _resolve_max_steps(requested: Optional[int]) -> tuple[int, dict]:
+    default_max = _read_positive_int_env("DEFAULT_MAX_STEPS", DEFAULT_MAX_STEPS_FALLBACK)
+    limit = _read_positive_int_env("MAX_STEPS_LIMIT", default_max)
+    requested_positive = requested if isinstance(requested, int) and requested > 0 else None
+    effective = requested_positive or default_max
+    effective = min(effective, limit)
+    return effective, {
+        "requested": requested,
+        "default": default_max,
+        "limit": limit,
+    }
+
+
+def _read_positive_int_env(var_name: str, fallback: int) -> int:
+    value = os.getenv(var_name)
+    if value is None:
+        return fallback
+    try:
+        parsed = int(value)
+        if parsed <= 0:
+            raise ValueError
+        return parsed
+    except ValueError:
+        logger.warning("%s must be a positive integer; using %s", var_name, fallback)
+        return fallback
 
 
 def _get_llm():
