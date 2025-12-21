@@ -106,7 +106,7 @@ async def run_task(body: RunTaskBody):
                 start_url=body.startUrl,
                 max_steps=max_steps,
             )
-            history = await agent.run()
+            history = await agent.run(max_steps=max_steps)
             _mark_done(
                 task_id,
                 status="finished",
