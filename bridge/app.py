@@ -53,23 +53,17 @@ async def run_task(body: RunTaskBody):
     max_steps_limit = _read_positive_int_env(MAX_STEPS_LIMIT_ENV, default_max_steps)
     max_steps = _effective_max_steps(body.maxSteps, default_max_steps, max_steps_limit)
     llm, llm_meta = _get_llm(body.llmProvider, body.llmModel)
+    max_steps_log = _format_max_steps_log(body.maxSteps, max_steps, default_max_steps, max_steps_limit)
+    llm_log = _format_llm_log(body.llmProvider, body.llmModel, llm_meta)
     logger.info(
-        "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s "
-        "requestedMaxSteps=%s effectiveMaxSteps=%s defaultMaxSteps=%s maxStepsLimit=%s "
-        "requestedLlmProvider=%s requestedLlmModel=%s effectiveLlmProvider=%s effectiveLlmModel=%s",
+        "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s maxSteps=%s llm=%s",
         task_id,
         body.clientTaskId,
         cdp_url,
         body.userDataDir or os.getenv("BROWSER_USER_DATA"),
         body.startUrl,
-        body.maxSteps,
-        max_steps,
-        default_max_steps,
-        max_steps_limit,
-        body.llmProvider,
-        body.llmModel,
-        llm_meta["provider"],
-        llm_meta["model"],
+        max_steps_log,
+        llm_log,
     )
     TASKS[task_id] = {
         "status": "running",
@@ -200,6 +194,43 @@ def _read_positive_int_env(var_name: str, fallback: int) -> int:
     except ValueError:
         logger.warning("%s must be a positive integer; using %s", var_name, fallback)
         return fallback
+
+
+def _format_max_steps_log(
+    requested: Optional[int], effective: int, default_max: int, limit: int
+) -> str:
+    requested_valid = isinstance(requested, int) and requested > 0
+    if requested_valid:
+        if requested > limit:
+            return f"{effective} (requested {requested}, capped at limit {limit})"
+        return f"{effective} (requested)"
+    if requested is not None and not requested_valid:
+        return f"{effective} (invalid request {requested}, using default {default_max})"
+    if default_max == limit:
+        return f"{effective} (default)"
+    return f"{effective} (default {default_max}, limit {limit})"
+
+
+def _format_llm_log(
+    requested_provider: Optional[str],
+    requested_model: Optional[str],
+    llm_meta: dict,
+) -> str:
+    effective_combo = f"{llm_meta['provider']}:{llm_meta['model']}"
+    requested_present = requested_provider or requested_model
+    if not requested_present:
+        return f"{effective_combo} (default)"
+    requested_provider_display = requested_provider.strip() if isinstance(requested_provider, str) else None
+    requested_model_display = requested_model.strip() if isinstance(requested_model, str) else None
+    requested_provider_clean = requested_provider_display.lower() if requested_provider_display else None
+    requested_model_clean = requested_model_display if requested_model_display else None
+    if (
+        (requested_provider_clean and requested_provider_clean != llm_meta["provider"])
+        or (requested_model_clean and requested_model_clean != llm_meta["model"])
+    ):
+        req_disp = f"{requested_provider_display or '-'}:{requested_model_display or '-'}"
+        return f"{effective_combo} (requested {req_disp})"
+    return f"{effective_combo} (requested)"
 
 
 def _get_llm(override_provider: Optional[str] = None, override_model: Optional[str] = None):
