@@ -31,6 +31,8 @@ class RunTaskBody(BaseModel):
     clientTaskId: Optional[str] = None
     taskStartedCallbackUrl: Optional[str] = None
     taskCompletedCallbackUrl: Optional[str] = None
+    llmProvider: Optional[str] = None
+    llmModel: Optional[str] = None
 
 
 # simple in-memory task store; replace with Redis/DB if needed
@@ -50,9 +52,11 @@ async def run_task(body: RunTaskBody):
     default_max_steps = _read_positive_int_env(DEFAULT_MAX_STEPS_ENV, DEFAULT_MAX_STEPS_FALLBACK)
     max_steps_limit = _read_positive_int_env(MAX_STEPS_LIMIT_ENV, default_max_steps)
     max_steps = _effective_max_steps(body.maxSteps, default_max_steps, max_steps_limit)
+    llm, llm_meta = _get_llm(body.llmProvider, body.llmModel)
     logger.info(
         "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s "
-        "requestedMaxSteps=%s effectiveMaxSteps=%s defaultMaxSteps=%s maxStepsLimit=%s",
+        "requestedMaxSteps=%s effectiveMaxSteps=%s defaultMaxSteps=%s maxStepsLimit=%s "
+        "requestedLlmProvider=%s requestedLlmModel=%s effectiveLlmProvider=%s effectiveLlmModel=%s",
         task_id,
         body.clientTaskId,
         cdp_url,
@@ -62,6 +66,10 @@ async def run_task(body: RunTaskBody):
         max_steps,
         default_max_steps,
         max_steps_limit,
+        body.llmProvider,
+        body.llmModel,
+        llm_meta["provider"],
+        llm_meta["model"],
     )
     TASKS[task_id] = {
         "status": "running",
@@ -80,6 +88,8 @@ async def run_task(body: RunTaskBody):
         "task": body.task,
         "startUrl": body.startUrl,
         "maxSteps": max_steps,
+        "llmProvider": llm_meta["provider"],
+        "llmModel": llm_meta["model"],
     }
     handle: asyncio.Task | None = None
     # fire start callback (non-blocking)
@@ -98,7 +108,6 @@ async def run_task(body: RunTaskBody):
                 cdp_url=cdp_url,
                 user_data_dir=body.userDataDir or os.getenv("BROWSER_USER_DATA") or None,
             )
-            llm = _get_llm()
             agent = Agent(
                 task=body.task,
                 browser=browser,
@@ -193,55 +202,56 @@ def _read_positive_int_env(var_name: str, fallback: int) -> int:
         return fallback
 
 
-def _get_llm():
-	"""
-	Select LLM based on env vars.
+def _get_llm(override_provider: Optional[str] = None, override_model: Optional[str] = None):
+    """
+    Select LLM based on request overrides or env vars.
 
-	Priority:
-	1) LLM_PROVIDER / LLM_MODEL
-	2) DEFAULT_LLM / DEFAULT_MODEL_NAME (keeps parity with WebUI vars)
-	Supported providers:
-	- openrouter: OPENROUTER_API_KEY or OPENAI_API_KEY, OPENROUTER_BASE_URL or OPENAI_ENDPOINT
-	- ollama: OLLAMA_ENDPOINT or OLLAMA_HOST
-	- browser-use (default): needs BROWSER_USE_API_KEY
-	"""
-	provider = os.getenv("LLM_PROVIDER") or os.getenv("DEFAULT_LLM") or "browser-use"
-	provider = provider.lower()
-	model = os.getenv("LLM_MODEL") or os.getenv("DEFAULT_MODEL_NAME") or "bu-latest"
+    Priority:
+    1) per-request override (llmProvider / llmModel)
+    2) LLM_PROVIDER / LLM_MODEL
+    3) DEFAULT_LLM / DEFAULT_MODEL_NAME (keeps parity with WebUI vars)
+    Supported providers:
+    - openrouter: OPENROUTER_API_KEY or OPENAI_API_KEY, OPENROUTER_BASE_URL or OPENAI_ENDPOINT
+    - ollama: OLLAMA_ENDPOINT or OLLAMA_HOST
+    - browser-use (default): needs BROWSER_USE_API_KEY
+    """
+    provider_raw = override_provider or os.getenv("LLM_PROVIDER") or os.getenv("DEFAULT_LLM") or "browser-use"
+    provider = provider_raw.strip().lower()
+    model = (override_model or os.getenv("LLM_MODEL") or os.getenv("DEFAULT_MODEL_NAME") or "bu-latest").strip()
 
-	if provider == "openrouter":
-		api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-		base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_ENDPOINT") or "https://openrouter.ai/api/v1"
-		logger.info(
-			"LLM selection: provider=openrouter model=%s base_url=%s api_key_set=%s",
-			model,
-			base_url,
-			bool(api_key),
-		)
-		return ChatOpenRouter(model=model, api_key=api_key, base_url=base_url)
+    if provider == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OPENAI_ENDPOINT") or "https://openrouter.ai/api/v1"
+        logger.info(
+            "LLM selection: provider=openrouter model=%s base_url=%s api_key_set=%s",
+            model,
+            base_url,
+            bool(api_key),
+        )
+        return ChatOpenRouter(model=model, api_key=api_key, base_url=base_url), {"provider": provider, "model": model}
 
-	if provider == "ollama":
-		host = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_HOST")
-		if not model:
-			model = "llama3.2"
-		logger.info(
-			"LLM selection: provider=ollama model=%s host=%s host_set=%s",
-			model,
-			host,
-			bool(host),
-		)
-		return ChatOllama(model=model, host=host)
+    if provider == "ollama":
+        host = os.getenv("OLLAMA_ENDPOINT") or os.getenv("OLLAMA_HOST")
+        if not model:
+            model = "llama3.2"
+        logger.info(
+            "LLM selection: provider=ollama model=%s host=%s host_set=%s",
+            model,
+            host,
+            bool(host),
+        )
+        return ChatOllama(model=model, host=host), {"provider": provider, "model": model}
 
-	# default: Browser-Use cloud LLM (requires BROWSER_USE_API_KEY)
-	bu_key = os.getenv("BROWSER_USE_API_KEY")
-	bu_base = os.getenv("BROWSER_USE_LLM_URL")
-	logger.info(
-		"LLM selection: provider=browser-use model=%s base_url=%s api_key_set=%s",
-		model,
-		bu_base,
-		bool(bu_key),
-	)
-	return ChatBrowserUse(model=model, api_key=bu_key, base_url=bu_base)
+    # default: Browser-Use cloud LLM (requires BROWSER_USE_API_KEY)
+    bu_key = os.getenv("BROWSER_USE_API_KEY")
+    bu_base = os.getenv("BROWSER_USE_LLM_URL")
+    logger.info(
+        "LLM selection: provider=browser-use model=%s base_url=%s api_key_set=%s",
+        model,
+        bu_base,
+        bool(bu_key),
+    )
+    return ChatBrowserUse(model=model, api_key=bu_key, base_url=bu_base), {"provider": provider, "model": model}
 
 
 def _serialize_history(history):
