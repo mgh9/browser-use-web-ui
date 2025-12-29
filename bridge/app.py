@@ -5,11 +5,7 @@ import uuid
 from typing import Optional
 
 from fastapi import FastAPI
-try:
-    from pydantic import BaseModel, Field, ConfigDict
-except ImportError:  # pragma: no cover - fallback for older pydantic
-    from pydantic import BaseModel, Field  # type: ignore
-    ConfigDict = None  # type: ignore
+from pydantic import BaseModel
 
 from browser_use import Agent, Browser, ChatBrowserUse
 from browser_use.llm.openrouter.chat import ChatOpenRouter
@@ -27,11 +23,7 @@ MAX_STEPS_LIMIT_ENV = "MAX_STEPS_LIMIT"
 
 
 class RunTaskBody(BaseModel):
-    if "ConfigDict" in globals() and ConfigDict is not None:
-        model_config = ConfigDict(populate_by_name=True)
-
     task: str
-    environment: str = Field(..., alias="Environment")
     startUrl: Optional[str] = None
     maxSteps: Optional[int] = None
     cdpUrl: Optional[str] = None
@@ -41,9 +33,6 @@ class RunTaskBody(BaseModel):
     taskCompletedCallbackUrl: Optional[str] = None
     llmProvider: Optional[str] = None
     llmModel: Optional[str] = None
-
-    class Config:
-        allow_population_by_field_name = True
 
 
 # simple in-memory task store; replace with Redis/DB if needed
@@ -59,7 +48,6 @@ def ping():
 async def run_task(body: RunTaskBody):
     task_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
-    environment = body.environment.strip() if isinstance(body.environment, str) else str(body.environment)
     cdp_url = body.cdpUrl or os.getenv("BROWSER_CDP")
     default_max_steps = _read_positive_int_env(DEFAULT_MAX_STEPS_ENV, DEFAULT_MAX_STEPS_FALLBACK)
     max_steps_limit = _read_positive_int_env(MAX_STEPS_LIMIT_ENV, default_max_steps)
@@ -68,10 +56,9 @@ async def run_task(body: RunTaskBody):
     max_steps_log = _format_max_steps_log(body.maxSteps, max_steps, default_max_steps, max_steps_limit)
     llm_log = _format_llm_log(body.llmProvider, body.llmModel, llm_meta)
     logger.info(
-        "[RUN_TASK] task_id=%s clientTaskId=%s environment=%s cdpUrl=%s userDataDir=%s startUrl=%s maxSteps=%s llm=%s",
+        "[RUN_TASK] task_id=%s clientTaskId=%s cdpUrl=%s userDataDir=%s startUrl=%s maxSteps=%s llm=%s",
         task_id,
         body.clientTaskId,
-        environment,
         cdp_url,
         body.userDataDir or os.getenv("BROWSER_USER_DATA"),
         body.startUrl,
@@ -97,16 +84,14 @@ async def run_task(body: RunTaskBody):
         "maxSteps": max_steps,
         "llmProvider": llm_meta["provider"],
         "llmModel": llm_meta["model"],
-        "environment": environment,
     }
     handle: asyncio.Task | None = None
     # fire start callback (non-blocking)
     if body.taskStartedCallbackUrl:
         logger.info(
-            "[START_CB] task_id=%s clientTaskId=%s environment=%s url=%s",
+            "[START_CB] task_id=%s clientTaskId=%s url=%s",
             task_id,
             body.clientTaskId,
-            environment,
             body.taskStartedCallbackUrl,
         )
         asyncio.create_task(_send_callback(body.taskStartedCallbackUrl, task_id))
@@ -156,13 +141,12 @@ async def run_task(body: RunTaskBody):
     handle = asyncio.create_task(runner())
     TASKS[task_id]["_handle"] = handle
     logger.info(
-        "[SCHEDULED] task_id=%s clientTaskId=%s environment=%s cdpUrl=%s",
+        "[SCHEDULED] task_id=%s clientTaskId=%s cdpUrl=%s",
         task_id,
         body.clientTaskId,
-        environment,
         cdp_url,
     )
-    return {"id": task_id, "clientTaskId": body.clientTaskId, "environment": environment}
+    return {"id": task_id, "clientTaskId": body.clientTaskId}
 
 
 @app.get("/task/{task_id}")
@@ -182,10 +166,9 @@ async def cancel_task(task_id: str):
         handle.cancel()
         task["status"] = "canceled"
         logger.info(
-            "[CANCEL] task_id=%s clientTaskId=%s environment=%s",
+            "[CANCEL] task_id=%s clientTaskId=%s",
             task_id,
             task.get("clientTaskId"),
-            task.get("environment"),
         )
         return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": "canceled"}
     return {"id": task_id, "clientTaskId": task.get("clientTaskId"), "status": task.get("status", "unknown")}
@@ -351,11 +334,7 @@ def _extract_output(history) -> str:
 
 def _public_task_view(task: dict) -> dict:
     """Strip internal fields (e.g., _handle) from task dict."""
-    public = {k: v for k, v in task.items() if not k.startswith("_")}
-    env_val = public.get("environment")
-    if env_val is not None and "Environment" not in public:
-        public["Environment"] = env_val
-    return public
+    return {k: v for k, v in task.items() if not k.startswith("_")}
 
 
 def _mark_done(task_id: str, status: str, is_success: bool, steps, output, error):
@@ -384,10 +363,9 @@ def _mark_done(task_id: str, status: str, is_success: bool, steps, output, error
     callback_url = task.get("taskCompletedCallbackUrl")
     if callback_url:
         logger.info(
-            "[COMPLETE_CB] task_id=%s clientTaskId=%s environment=%s url=%s cdpUrl=%s",
+            "[COMPLETE_CB] task_id=%s clientTaskId=%s url=%s cdpUrl=%s",
             task_id,
             task.get("clientTaskId"),
-            task.get("environment"),
             callback_url,
             task.get("cdpUrl"),
         )
