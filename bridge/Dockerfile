@@ -18,6 +18,6 @@ RUN pip install --no-cache-dir "browser-use" fastapi uvicorn[standard] playwrigh
 # Install Chromium for Playwright
 RUN playwright install --with-deps chromium
 
-COPY app.py .
+COPY *.py .
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "9000"]
